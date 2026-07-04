@@ -6,6 +6,16 @@ import (
 )
 
 func main() {
+	// var total int
+	// total = 100
+	// label := "score"
+	// // label = 200
+	// fmt.Println(total, label)
+
+	a, b := 3, 4
+	fmt.Println(a / b)
+	fmt.Println(float64(a) / float64(b))
+
 	mode := flag.String("mode", "all", "demo mode: all, zero, iota")
 	flag.Parse()
 
@@ -21,6 +31,8 @@ func main() {
 		demoIota()
 		demoConversion()
 	}
+
+	fmt.Println(Monday, Tuesday, ReadPerm)
 }
 
 func demoZeroValues() {
