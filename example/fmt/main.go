@@ -48,6 +48,8 @@ func demoFormat() {
 	fmt.Printf("struct %%#v: %#v\n", person{Name: "Bob", Age: 25})
 	fmt.Printf("width/pad: %5d | %05d | %8.2f\n", 7, 7, 3.14159)
 	fmt.Println("Stringer:", namedUser{Name: "Carol", Age: 28})
+	fmt.Printf("|%10s|%10s|\n", "id", "name")
+	fmt.Printf("|%10d|%10s|\n", 1, "Alice")
 }
 
 func demoScan() {
@@ -56,6 +58,10 @@ func demoScan() {
 	var age int
 	n, err := fmt.Sscan("Diana 22", &name, &age)
 	fmt.Printf("Sscan n=%d name=%q age=%d err=%v\n", n, name, age, err)
+
+	var a, b, c int
+	fmt.Sscanf("10 20 30", "%d %d %d", &a, &b, &c)
+	fmt.Println(a, b, c)
 }
 
 func demoError() {
