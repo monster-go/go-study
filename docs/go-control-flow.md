@@ -176,7 +176,7 @@ for _, v := range nums {
 }
 ```
 
-**string 的 range：** 第二个值是 rune，不是 byte。
+**string 的 range：** 第二个值是 rune，不是 byte；第一个值 `i` 是**字节偏移**（中文环境下常每次 +3，见 [字符串操作](go-string-operations.md) 2.5）。
 
 ---
 

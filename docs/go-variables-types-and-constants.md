@@ -111,7 +111,7 @@ var f float64 = float64(i)
 var u uint = uint(f)   // 可能丢失精度，需自己负责
 ```
 
-字符串与数字互转需用 `strconv` 等标准库，不能 `string(123)` 当数字用（那是 Unicode 码点）。
+字符串与数字互转需用 `strconv` 等标准库，不能 `string(123)` 当数字用（那是 Unicode 码点，见 [字符串操作](go-string-operations.md) 2.4）。
 
 ### 2.6 常量（Constant）
 
@@ -168,11 +168,39 @@ const (
 // 2. 跳过某些值：用 _ 占位
 const (
     _  = iota             // 丢弃 0
-    KB = 1 << (10 * iota) // 1<<10, 1<<20, ...
+    KB = 1 << (10 * iota) // 见下方推导
     MB
     GB
 )
+```
 
+**`1 << (10 * iota)` 如何算出 KB / MB / GB：**
+
+`<< n` 表示左移 n 位，等于 × 2ⁿ。每行 iota 递增，表达式随之变化：
+
+| 行 | iota | `10 * iota` | 表达式 | 二进制含义 | 十进制 |
+|----|------|-------------|--------|------------|--------|
+| `_ = iota` | 0 | — | （丢弃） | — | — |
+| `KB = …` | 1 | 10 | `1 << 10` | 2¹⁰ | 1024 |
+| `MB` | 2 | 20 | `1 << 20` | 2²⁰ | 1 048 576 |
+| `GB` | 3 | 30 | `1 << 30` | 2³⁰ | 1 073 741 824 |
+
+以 `KB` 为例：`1 << 10` 把 `1`（二进制 `…0001`）左移 10 位 → `10000000000`₂ = 1024₁₀。
+
+**权限位常量（与 [`example/vars/constants.go`](../example/vars/constants.go) 一致）：**
+
+```go
+const (
+    _        = iota
+    ReadPerm = 1 << iota // iota=1 → 1<<1 = 2
+    WritePerm            // iota=2 → 1<<2 = 4
+    ExecPerm             // iota=3 → 1<<3 = 8
+)
+```
+
+每行左移位数 +1，得到 2、4、8… 的权限掩码，可用按位或组合：`ReadPerm | WritePerm` = 6。
+
+```go
 // 3. 同一行多个常量共享 iota
 const (
     Read, Write, Execute = iota, iota, iota // 都是 0？不对——
@@ -219,8 +247,8 @@ fmt.Println(total, label)
 
 ```go
 a, b := 3, 4
-// fmt.Println(a / b)           // 整数除法 → 0
-fmt.Println(float64(a) / float64(b)) // → 0.75
+// fmt.Println(a / b)           // 整数除法：3÷4 商 0 余 3 → 0
+fmt.Println(float64(a) / float64(b)) // 3.0/4.0 = 0.75
 ```
 
 ### 3.4 跟着改：iota
@@ -283,7 +311,14 @@ const B = iota // 又是 0，不是 1
 ### 4.5 用 `string(n)` 把数字转成字符串
 
 ```go
-s := string(65) // 得到 "A"（Unicode 65），不是 "65"
+s := string(65) // 得到 "A"（Unicode 码点 U+0041），不是 "65"
+```
+
+**推导：** `string(n)` 把整数 n 当作 **Unicode 码点**，不是十进制文本：
+
+```
+65  →  U+0041  →  字符 'A'  →  "A"
+"65" →  须用 strconv.Itoa(65) 或 fmt.Sprintf("%d", 65)
 ```
 
 **修复：** 数字转字符串用 `strconv.Itoa(65)` 或 `fmt.Sprintf("%d", 65)`。

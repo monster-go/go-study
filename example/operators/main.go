@@ -37,7 +37,7 @@ func demoArithmetic() {
 	fmt.Printf("%d * %d = %d\n", a, b, a*b)
 	fmt.Printf("%d / %d = %d (整数除法)\n", a, b, a/b)
 	fmt.Printf("%d %% %d = %d\n", a, b, a%b)
-	fmt.Printf("float64(%d)/float64(%d) = %.2f\n", a, b, float64(a)/float64(b))
+	fmt.Printf("float64(%d)/float64(%d) = %.3f\n", a, b, float64(a)/float64(b))
 }
 
 func demoCompare() {
