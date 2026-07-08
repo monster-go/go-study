@@ -1,20 +1,22 @@
-# Go 数组与切片：定长数组与动态切片
+# Go 数组、切片与 map：定长数组、动态切片与键值映射
 
-> 知识点总结：区分**数组（array）**与**切片（slice）**；掌握 `len`/`cap`、`make`/`append`、切片表达式 `[low:high:max]` 与底层数组共享；能避免越界与「改子切片影响原切片」的意外。
+> 知识点总结：区分**数组（array）**与**切片（slice）**；掌握 `len`/`cap`、`make`/`append`、切片表达式与底层数组共享；理解 **map（映射）** 的创建、读写、删除与 `range` 遍历；能避免切片越界、共享底层意外，以及向 nil map 写入等常见错误。
 
 ---
 
 ## 1. 为什么需要了解这个
 
-切片是 Go 最常用的集合类型，但语义比 Java `ArrayList` 或 Python `list` 更底层。新人常困惑：
+切片是 Go 最常用的集合类型之一，但语义比 Java `ArrayList` 或 Python `list` 更底层。map 则类似 Python `dict` 或 Java `HashMap`，但同样有一些 Go 特有的规则。新人常困惑：
 
 - 以为 `[]int` 是数组——实际是**切片类型**
 - `append` 后原切片「变了没」、何时会触发扩容
 - `s[1:3]` 与 `len`、`cap` 的关系算不清
 - 两个切片共享底层数组，改一处另一处也变
 - `nil` 切片与空切片 `[]int{}` 能否 `append`、JSON 表现是否相同
+- 向 **nil map** 写入直接 panic，与 nil 切片行为不同
+- 读不存在的 map key 得到零值，误以为 key 一定存在
 
-本篇建立在 [语句控制](go-control-flow.md) 之后（会 `for range` 遍历）。后续 map、函数参数、JSON 编码都大量涉及 slice。
+本篇建立在 [语句控制](go-control-flow.md) 之后（会 `for range` 遍历）。slice 与 map 是 Go 最常用的两种集合类型；后续函数参数、JSON 编码都会大量涉及它们。
 
 ---
 
@@ -185,6 +187,117 @@ func modify(arr [3]int) {
 
 大数组传参会复制；需要修改或避免复制时传**切片**或指针。
 
+### 2.8 map 是什么
+
+**map（映射）** 是键值对的无序集合，底层是哈希表（hash table）。按 key 查找平均 O(1)，适合「按标识查数据」：
+
+| | 切片 `[]T` | map `map[K]V` |
+|---|------------|---------------|
+| 访问方式 | 整数下标 `s[i]` | 键 `m[key]` |
+| 顺序 | 有顺序（下标 0, 1, 2…） | **遍历顺序随机** |
+| 零值 | `nil` 切片可读 len、可 append | `nil` map **不能写入** |
+| 比较 | 不能 `==` 比内容（仅 `== nil`） | 同上，见 [运算符文档](go-operators.md) |
+
+```go
+var m map[string]int        // nil map
+m2 := map[string]int{}      // 空 map，已初始化，可写入
+m3 := make(map[string]int)  // 空 map，常用写法
+scores := map[string]int{"alice": 95, "bob": 88}
+```
+
+### 2.9 map 的创建与读写
+
+**三种常见创建方式：**
+
+```go
+// 1. 字面量（已知初始键值）
+ages := map[string]int{"alice": 30, "bob": 25}
+
+// 2. make（键值后续动态添加）
+counts := make(map[string]int)
+
+// 3. var 声明 → nil map，只能读不能写
+var cache map[string]string
+```
+
+**读写：**
+
+```go
+ages["alice"] = 31           // 写入或更新
+v := ages["alice"]           // 读取；key 不存在时 v 为 value 类型的零值
+v, ok := ages["carol"]       // comma-ok：ok=false 表示 key 不存在
+delete(ages, "bob")          // 删除；key 不存在时不 panic
+n := len(ages)               // 当前键值对个数
+```
+
+**comma-ok 为何要区分「不存在」与「值为零」：**
+
+```go
+m := map[string]int{"zero": 0}
+v := m["zero"]      // v=0
+v2 := m["missing"]  // v2 也是 0——无法区分「没有 key」还是「值就是 0」
+
+v3, ok := m["zero"]    // v3=0, ok=true
+v4, ok2 := m["missing"] // v4=0, ok2=false
+```
+
+### 2.10 nil map 与空 map
+
+| | `var m map[K]V` | `map[K]V{}` 或 `make(map[K]V)` |
+|---|-----------------|----------------------------------|
+| 值 | `nil` | 非 nil，指向空哈希表 |
+| `len(m)` | 0 | 0 |
+| 读取 `m[k]` | 返回零值，不 panic | 返回零值，不 panic |
+| 写入 `m[k]=v` | **panic** | 正常 |
+| `m == nil` | true | false |
+
+```go
+var m map[string]int
+// m["x"] = 1  // panic: assignment to entry in nil map
+
+m = make(map[string]int) // 或 m = map[string]int{}
+m["x"] = 1               // OK
+```
+
+**原理：** nil map 没有分配哈希表存储；写入必须先 `make` 或字面量初始化。读取不触发存储分配，所以安全。
+
+### 2.11 map 的键类型与引用语义
+
+**键必须是可比较（comparable）类型：** 布尔、数值、字符串、指针、数组（元素可比较时）、结构体（字段均可比较时）、interface（动态值可比较时）。
+
+**不能作键：** slice、map、function——因为它们不能用 `==` 比较。
+
+```go
+// m := map[[]int]string{} // 编译错误：invalid map key type []int
+m := map[[2]int]string{}   // 数组作键 OK（长度是类型一部分）
+```
+
+map 是**引用类型**：传参时不复制整张表，函数内修改会影响外部。与 slice 一样，**不能用 `==` 比较内容**（只能 `== nil`）；比较内容用 Go 1.21+ 的 `maps.Equal`（见 [运算符文档](go-operators.md)）。
+
+**不能对 map 元素取地址：**
+
+```go
+m := map[string]int{"a": 1}
+// p := &m["a"] // 编译错误：cannot take address of m["a"]
+```
+
+原因：map 扩容时会 rehash，元素地址可能变化。
+
+### 2.12 遍历 map 与并发注意
+
+```go
+for k, v := range m {
+    fmt.Println(k, v)
+}
+
+for k := range m { /* 只要 key */ }
+for _, v := range m { /* 只要 value */ }
+```
+
+**遍历顺序随机**——不要依赖 `range map` 的输出顺序；需要有序输出时，先把 key 收集到 slice 再排序。
+
+map **不是并发安全**的：多个 goroutine 同时读写同一 map 会 panic。并发场景用 `sync.Mutex` 保护，或 `sync.Map`（特定模式）。本篇先掌握单 goroutine 用法。
+
 ---
 
 ## 3. 动手实践
@@ -232,13 +345,74 @@ head = append(head, 99)
 fmt.Println(data) // [0 1] 未被 99 覆盖（append 新数组）
 ```
 
-### 3.4 自检清单
+### 3.4 自检清单（数组与切片）
 
 - [ ] 能区分 `[3]int` 与 `[]int`
 - [ ] 能解释 `s[1:4]` 的 len 和 cap
 - [ ] 知道 `append` 必须接收返回值
 - [ ] 知道子切片与原切片可能共享底层数组
 - [ ] `go run .` 各 `-mode` 无报错
+
+### 3.5 map 动手实践
+
+示例代码在 [`example/maps/`](../example/maps/)。
+
+#### 3.5.1 运行示例
+
+```bash
+cd example/maps
+go run .                    # 全部演示
+go run . -mode=basic        # 字面量与 make
+go run . -mode=ok           # comma-ok 判断 key 是否存在
+go run . -mode=nil          # nil map 与空 map
+go run . -mode=range        # range 遍历
+go run . -mode=delete       # delete 与 len
+```
+
+预期（节选）：
+
+```
+--- map 基本操作 ---
+字面量: map[a:1 b:2]
+make + 赋值: map[x:10]
+--- comma-ok ---
+存在 go: 1 true
+不存在 java: 0 false
+--- nil map ---
+nil map len: 0 == nil: true
+空 map {} len: 0 == nil: false
+```
+
+#### 3.5.2 跟着改：统计词频
+
+```go
+text := []string{"go", "map", "go", "slice"}
+freq := make(map[string]int)
+for _, word := range text {
+    freq[word]++
+}
+fmt.Println(freq) // map[go:2 map:1 slice:1]
+```
+
+`freq[word]++` 等价于：若 key 不存在，读出零值 0，加 1 后写回——这正是 map 计数器的惯用法。
+
+#### 3.5.3 跟着改：安全读取配置
+
+```go
+config := map[string]string{"host": "localhost"}
+if port, ok := config["port"]; ok {
+    fmt.Println("port:", port)
+} else {
+    fmt.Println("port 未配置，使用默认 8080")
+}
+```
+
+#### 3.5.4 自检清单（map）
+
+- [ ] 能写出三种 map 创建方式并说明 nil map 为何不能写入
+- [ ] 能用 comma-ok 区分「key 不存在」与「值为零」
+- [ ] 知道 `range map` 顺序不固定
+- [ ] `cd example/maps && go run .` 各 `-mode` 无报错
 
 ---
 
@@ -285,6 +459,40 @@ matrix[0][0] = 1           // panic
 
 **修复：** 循环 `matrix[i] = make([]int, cols)`。
 
+### 4.6 向 nil map 写入
+
+```go
+var m map[string]int
+m["k"] = 1 // panic: assignment to entry in nil map
+```
+
+**修复：** 先 `m = make(map[string]int)` 或 `m = map[string]int{}`。
+
+### 4.7 把「读到零值」当成「key 存在」
+
+```go
+m := map[string]int{"count": 0}
+if m["count"] != 0 { /* ... */ } // 永远不进分支，但 key 其实存在
+```
+
+**修复：** 用 `v, ok := m["count"]` 判断存在性；或单独约定 sentinel 值。
+
+### 4.8 依赖 map 遍历顺序
+
+```go
+for k, v := range m {
+    fmt.Println(k, v) // 两次运行顺序可能不同
+}
+```
+
+**修复：** 需要稳定顺序时，收集 key 到 slice，`sort.Strings(keys)` 后再访问。
+
+### 4.9 并发读写同一 map
+
+多个 goroutine 同时写（或一读一写）会触发 `fatal error: concurrent map writes`。
+
+**修复：** 加锁、用 channel 串行化，或评估 `sync.Map`；不要在未同步时共享 map。
+
 ---
 
 ## 5. 小结与延伸阅读
@@ -297,15 +505,20 @@ matrix[0][0] = 1           // panic
 4. `append` 可能扩容并返回新切片，务必 `s = append(s, x)`
 5. 子切片与原切片共享底层时，修改会相互影响
 6. `copy` 用于显式复制；三索引用于限制 append 范围
+7. map `map[K]V` 是键值哈希表；键须可比较，遍历顺序随机
+8. nil map 可读不可写；空 map `{}` / `make` 后可正常增删
+9. 用 comma-ok 判断 key 是否存在；比较 map 内容用 `maps.Equal`
 
 **官方文档：**
 
 - [A Tour of Go：Slices](https://go.dev/tour/moretypes/7)
+- [A Tour of Go：Maps](https://go.dev/tour/moretypes/8)
 - [Go Slices: usage and internals](https://go.dev/blog/slices-intro)
 - [pkg.go.dev/builtin#append](https://pkg.go.dev/builtin#append)
+- [pkg.go.dev/maps](https://pkg.go.dev/maps)（Go 1.21+，`maps.Equal` 等）
 
 **与本仓库的关系：**
 
 - 上一篇：[Go 语句控制](go-control-flow.md)
-- 示例：[`example/slices/`](../example/slices/)
-- 相关：map、channel（待写）
+- 示例：[`example/slices/`](../example/slices/)、[`example/maps/`](../example/maps/)
+- 相关：[运算符文档](go-operators.md)（slice/map 比较规则）、channel（待写）

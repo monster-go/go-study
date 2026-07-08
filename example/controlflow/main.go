@@ -6,7 +6,7 @@ import (
 )
 
 func main() {
-	mode := flag.String("mode", "all", "demo mode: all, if, for, switch, range")
+	mode := flag.String("mode", "all", "demo mode: all, if, for, switch, range, 99")
 	flag.Parse()
 
 	switch *mode {
@@ -18,6 +18,8 @@ func main() {
 		demoSwitch()
 	case "range":
 		demoRange()
+	case "99":
+		demoFor99()
 	default:
 		demoIf()
 		demoFor()
@@ -85,5 +87,14 @@ func demoRange() {
 	}
 	for i, ch := range "Hi" {
 		fmt.Printf("  [%d] %q\n", i, ch)
+	}
+}
+
+func demoFor99() {
+	for i := 1; i <= 9; i++ {
+		for j := 1; j <= i; j++ {
+			fmt.Printf("%d * %d = %d\t", j, i, j*i)
+		}
+		fmt.Println()
 	}
 }
