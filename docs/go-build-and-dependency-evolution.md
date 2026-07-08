@@ -405,6 +405,46 @@ go env GOBIN    # 若为空，则使用 $GOPATH/bin
 echo $PATH      # 确保包含上述目录
 ```
 
+### Q6：Mac 上 build 的二进制在 Linux 服务器无法运行？
+
+报错 `cannot execute binary file: Exec format error` 时，通常是**目标平台不匹配**：本机 `go build` 默认生成当前系统的可执行文件（如 Mac 上为 `darwin/arm64` 的 Mach-O），而 Linux 需要 `linux/amd64` 或 `linux/arm64` 的 ELF 格式。
+
+**1. 确认服务器架构**
+
+```bash
+uname -m
+# x86_64  → GOARCH=amd64（常见云服务器）
+# aarch64 → GOARCH=arm64（如 AWS Graviton）
+```
+
+**2. 交叉编译**
+
+```bash
+# 大多数 Ubuntu x86_64 服务器
+GOOS=linux GOARCH=amd64 go build -o myapp .
+
+# ARM 服务器
+GOOS=linux GOARCH=arm64 go build -o myapp .
+```
+
+**3. 上传前用 file 检查**
+
+```bash
+file myapp
+# 正确：ELF 64-bit LSB executable, x86-64, ...
+# 错误：Mach-O 64-bit executable arm64（仍是 Mac 产物）
+```
+
+**4. 依赖 CGO 时**
+
+纯 Go 项目可直接交叉编译。若依赖 C 库，常需关闭 CGO 或配置交叉工具链：
+
+```bash
+CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o myapp .
+```
+
+相关环境变量：`GOOS`（目标操作系统）、`GOARCH`（目标 CPU 架构）；`go env GOOS GOARCH` 可查看本机默认值。
+
 ---
 
 ## 12. 与编译器实现的关系（延伸）
