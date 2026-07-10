@@ -3,10 +3,11 @@ package main
 import (
 	"flag"
 	"fmt"
+	"slices"
 )
 
 func main() {
-	mode := flag.String("mode", "all", "demo mode: all, basic, ok, nil, range, delete")
+	mode := flag.String("mode", "all", "demo mode: all, basic, ok, nil, range, order, delete")
 	flag.Parse()
 
 	switch *mode {
@@ -18,6 +19,8 @@ func main() {
 		demoNil()
 	case "range":
 		demoRange()
+	case "order":
+		demoOrder()
 	case "delete":
 		demoDelete()
 	default:
@@ -63,6 +66,22 @@ func demoRange() {
 	m := map[string]int{"a": 1, "b": 2, "c": 3}
 	for k, v := range m {
 		fmt.Printf("  %s -> %d\n", k, v)
+	}
+}
+
+
+func demoOrder() {
+	m := map[string]int{"a":1, "b":2, "c":3}
+	keys := make([]string, 0, len(m))
+
+	for k := range m {
+		keys = append(keys, k)
+	}
+	fmt.Println(keys)
+
+	slices.Sort(keys)
+	for _, k :=range keys {
+		fmt.Printf("  %s -> %d\n", k, m[k])
 	}
 }
 

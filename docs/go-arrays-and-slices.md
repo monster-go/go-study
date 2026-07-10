@@ -485,7 +485,7 @@ for k, v := range m {
 }
 ```
 
-**修复：** 需要稳定顺序时，收集 key 到 slice，`sort.Strings(keys)` 后再访问。
+**修复：** 需要稳定顺序时，收集 key 到 slice，`slices.Sort(keys)` 后再访问（旧写法 `sort.Strings(keys)` 仍可用，见 [集合 API 演进](go-collection-api-evolution.md)）。
 
 ### 4.9 并发读写同一 map
 
