@@ -1,6 +1,6 @@
 # Go 数组、切片与 map：定长数组、动态切片与键值映射
 
-> 知识点总结：区分**数组（array）**与**切片（slice）**；掌握 `len`/`cap`、`make`/`append`、切片表达式与底层数组共享；理解 **map（映射）** 的创建、读写、删除与 `range` 遍历；能避免切片越界、共享底层意外，以及向 nil map 写入等常见错误。
+> 知识点总结：区分**数组（array）**与**切片（slice）**；掌握 `len`/`cap`、`make`/`new`/`append`、切片表达式与底层数组共享；理解 **map（映射）** 的创建、读写、删除与 `range` 遍历；能避免切片越界、共享底层意外，以及向 nil map 写入等常见错误。
 
 ---
 
@@ -10,6 +10,7 @@
 
 - 以为 `[]int` 是数组——实际是**切片类型**
 - `append` 后原切片「变了没」、何时会触发扩容
+- `new` 与 `make` 都能「创建」切片/map，返回值和语义却不同
 - `s[1:3]` 与 `len`、`cap` 的关系算不清
 - 两个切片共享底层数组，改一处另一处也变
 - `nil` 切片与空切片 `[]int{}` 能否 `append`、JSON 表现是否相同
@@ -112,7 +113,7 @@ cap = max - low = 3 - 1 = 2        → append 最多再写 0 格（已满）
 
 cap 被限制为 2 后，对 `sub` 做 `append` 会**分配新数组**，不会覆盖 `s` 里 index 3、4 的元素。
 
-### 2.4 make 与字面量
+### 2.4 make、new 与字面量
 
 ```go
 s1 := make([]int, 5)      // len=5 cap=5，元素为零值
@@ -128,6 +129,40 @@ var s4 []int              // nil 切片
 | `== nil` | true | false |
 
 多数场景两者可互换；需要区分「未初始化」语义时用 nil。
+
+#### new 与 make 的区别
+
+Go 有两个内置分配函数，新人常混淆：
+
+| | `new(T)` | `make(T, ...)` |
+|---|----------|----------------|
+| 适用类型 | **任意类型** | 仅 **slice、map、channel** |
+| 返回值 | `*T`（指向零值的指针） | `T`（已初始化、可直接用的值） |
+| 对切片 | `new([]int)` → `*[]int`，指向 **nil 切片** | `make([]int, 5)` → `[]int`，len=5 cap=5 |
+| 对 map | `new(map[K]V)` → `*map[K]V`，指向 **nil map** | `make(map[K]V)` → 可写入的空 map |
+
+```go
+p := new(int)           // *int，*p == 0
+arr := new([3]int)      // *[3]int，底层数组已零值，(*arr)[0] 可读写
+
+ps := new([]int)        // *[]int，*ps 是 nil 切片
+*ps = append(*ps, 1)    // append nil 切片合法，但极少这样写
+
+pm := new(map[string]int) // *map[string]int，*pm 仍是 nil map
+// (*pm)["x"] = 1       // panic！new 不会初始化哈希表
+
+s := make([]int, 5)       // 日常创建切片用 make
+m := make(map[string]int) // 日常创建 map 用 make
+```
+
+**要点：**
+
+- `new(T)` 在堆上分配一块内存、置为类型 `T` 的**零值**，返回 `*T`；**不会**为 slice/map/channel 做内部结构初始化。
+- `make` 才会创建「可用的」切片（分配底层数组）、map（分配哈希表）或 channel（分配缓冲区）。
+- 创建 slice/map 时**几乎总是用 `make` 或字面量**，不要用 `new`。
+- `new` 常见于需要「指向零值的指针」时，例如 `new(int)`、`new(MyStruct)`，或某些 API 要求 `*T` 参数；语义上等价于 `var v T; return &v`（编译器通常会让 `v` 逃逸到堆上）。
+
+**一句话记忆：** `new` 返回「零值指针」；`make` 返回「能直接用的 slice/map/channel」。
 
 ### 2.5 append 与扩容
 
@@ -348,6 +383,7 @@ fmt.Println(data) // [0 1] 未被 99 覆盖（append 新数组）
 ### 3.4 自检清单（数组与切片）
 
 - [ ] 能区分 `[3]int` 与 `[]int`
+- [ ] 能说明 `new` 与 `make` 的返回值和适用类型差异
 - [ ] 能解释 `s[1:4]` 的 len 和 cap
 - [ ] 知道 `append` 必须接收返回值
 - [ ] 知道子切片与原切片可能共享底层数组
@@ -501,13 +537,14 @@ for k, v := range m {
 
 1. 数组 `[N]T` 长度固定；切片 `[]T` 是日常使用的动态视图
 2. 切片 = 指针 + len + cap；对底层数组的引用
-3. `s[low:high]` 半开区间；cap 通常延伸到原数组末尾
-4. `append` 可能扩容并返回新切片，务必 `s = append(s, x)`
-5. 子切片与原切片共享底层时，修改会相互影响
-6. `copy` 用于显式复制；三索引用于限制 append 范围
-7. map `map[K]V` 是键值哈希表；键须可比较，遍历顺序随机
-8. nil map 可读不可写；空 map `{}` / `make` 后可正常增删
-9. 用 comma-ok 判断 key 是否存在；比较 map 内容用 `maps.Equal`
+3. `make` 初始化 slice/map/channel；`new` 返回任意类型的零值指针，不初始化 slice/map 内部结构
+4. `s[low:high]` 半开区间；cap 通常延伸到原数组末尾
+5. `append` 可能扩容并返回新切片，务必 `s = append(s, x)`
+6. 子切片与原切片共享底层时，修改会相互影响
+7. `copy` 用于显式复制；三索引用于限制 append 范围
+8. map `map[K]V` 是键值哈希表；键须可比较，遍历顺序随机
+9. nil map 可读不可写；空 map `{}` / `make` 后可正常增删
+10. 用 comma-ok 判断 key 是否存在；比较 map 内容用 `maps.Equal`
 
 **官方文档：**
 
@@ -515,6 +552,7 @@ for k, v := range m {
 - [A Tour of Go：Maps](https://go.dev/tour/moretypes/8)
 - [Go Slices: usage and internals](https://go.dev/blog/slices-intro)
 - [pkg.go.dev/builtin#append](https://pkg.go.dev/builtin#append)
+- [pkg.go.dev/builtin#new](https://pkg.go.dev/builtin#new)、[pkg.go.dev/builtin#make](https://pkg.go.dev/builtin#make)
 - [pkg.go.dev/maps](https://pkg.go.dev/maps)（Go 1.21+，`maps.Equal` 等）
 
 **与本仓库的关系：**
