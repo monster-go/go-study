@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"strconv"
 )
 
 func main() {
@@ -19,6 +20,8 @@ func main() {
 		demoScope()
 	case "defer":
 		demoDefer()
+	case "defer2":
+		demoDefer2()
 	case "closure":
 		demoClosure()
 	case "builtin":
@@ -116,6 +119,21 @@ func demoDefer() {
 		defer fmt.Println(i)
 		i++
 	}()
+}
+
+func calc(index string, a, b int) int {
+	ret := a + b
+	fmt.Println(index, a, b, ret)
+	return ret
+}
+
+func demoDefer2() {
+	x := 1
+	y := 2
+	defer calc("AA", x, calc("A", x, y))
+	x = 10
+	defer calc("BB", x, calc("B", x, y))
+	y = 20
 }
 
 // --- 闭包 ---

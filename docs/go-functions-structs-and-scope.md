@@ -406,9 +406,80 @@ go doc -u builtin
 
 ---
 
-## 3. 动手实践
+## 3. 应用场景
 
-### 3.1 运行仓库示例
+学完语法后，更关键的是知道**什么时候该用**。下面按本篇主题列出常见工程场景（解决什么问题 → 怎么用）。
+
+### 3.1 闭包：带状态、可配置的「函数工厂」
+
+闭包解决的问题是：**既要记住一些状态或配置，又不想为此单独定义一个 struct + 方法**；调用方只拿一个 `func(...)` 就能用。
+
+| 场景 | 解决什么问题 | 典型写法 |
+|------|--------------|----------|
+| **带状态的函数工厂** | 每次创建独立计数器 / 限流器，互不干扰 | 上文 `counter()`：`a := counter(); b := counter()` |
+| **HTTP 中间件 / 装饰器** | 外层接收配置（超时、logger），内层统一包一层请求处理 | `func WithTimeout(d time.Duration) func(http.Handler) http.Handler` |
+| **延迟绑定配置** | 创建时捕获依赖，多次调用复用同一配置 | `func NewGreeter(prefix string) func(string) string { return func(name string) string { return prefix + name } }` |
+
+最短骨架（中间件风格）：
+
+```go
+func WithPrefix(prefix string) func(string) string {
+    return func(msg string) string {
+        return prefix + msg // 闭包捕获 prefix
+    }
+}
+
+log := WithPrefix("[app] ")
+fmt.Println(log("started")) // [app] started
+```
+
+**何时不用闭包：** 状态字段多、需要多方法协作时，用 struct + 方法更清晰；闭包适合「一个函数 + 少量捕获」的场景。
+
+### 3.2 命名返回值：`defer` 改写结果
+
+命名返回值真正有优势的场景是：**在 `defer` 里统一收尾并修改返回值**（例如包装 `error`、补默认值）。匿名返回值做不到「defer 里改结果槽」。
+
+```go
+func ReadConfig(path string) (cfg Config, err error) {
+    defer func() {
+        if err != nil {
+            err = fmt.Errorf("read config %s: %w", path, err)
+        }
+    }()
+    // ... 多处可能 return ..., err
+    return cfg, err
+}
+```
+
+短函数、逻辑简单时可用裸 `return`；复杂分支更推荐显式 `return v, err`。
+
+### 3.3 defer：资源释放与收尾
+
+`defer` 解决的问题是：**无论函数从哪条路径返回，都能保证清理逻辑执行**（关文件、解锁、还原状态）。
+
+| 场景 | 解决什么问题 |
+|------|--------------|
+| `defer f.Close()` / `defer resp.Body.Close()` | 避免漏关、提前 return 导致泄漏 |
+| `defer mu.Unlock()` | 加锁后任一路径都能解锁 |
+| `defer` + `recover` | 在包边界吞掉 panic，转成错误日志 |
+
+### 3.4 结构体与方法：数据 + 行为打包
+
+| 场景 | 解决什么问题 |
+|------|--------------|
+| 领域模型（`User`、`Order`） | 把相关字段绑在一起，避免一长串散落参数 |
+| 指针接收者改字段 | 方法需要改接收者状态时（如 `SetAge`） |
+| 嵌入（Embedding） | 复用已有类型的字段/方法，少写转发样板 |
+
+### 3.5 多返回值与 `(T, error)`
+
+Go 用多返回值表达「结果 + 是否失败」，而不是异常控制流。几乎所有可能失败的 I/O、解析、RPC 调用都会返回 `error`，调用方显式检查。
+
+---
+
+## 4. 动手实践
+
+### 4.1 运行仓库示例
 
 ```bash
 cd example/functions
@@ -442,7 +513,7 @@ counter: 1 2 3
 len=3 cap=5 append后 len=4
 ```
 
-### 3.2 跟着写：带 error 的解析函数
+### 4.2 跟着写：带 error 的解析函数
 
 ```go
 func ParsePositive(s string) (int, error) {
@@ -459,7 +530,7 @@ func ParsePositive(s string) (int, error) {
 
 调用方始终检查 `err`，这是 Go 的常规风格。
 
-### 3.3 跟着写：defer 关闭资源
+### 4.3 跟着写：defer 关闭资源
 
 ```go
 resp, err := http.Get(url)
@@ -471,20 +542,21 @@ defer resp.Body.Close()
 
 即使中间有 `return`，`Close` 也会在返回前执行。
 
-### 3.4 自检清单
+### 4.4 自检清单
 
 - [ ] 能写出多返回值函数并正确处理 `error`
 - [ ] 能解释值接收者与指针接收者的区别
 - [ ] 能说明 `defer` 的执行顺序与参数何时求值
 - [ ] 能写一个返回闭包的工厂函数并解释变量如何被捕获
+- [ ] 能说出闭包至少 2 个应用场景（如函数工厂、中间件/装饰器）
 - [ ] 能区分 `make` 与 `new` 的适用类型
 - [ ] `go run .` 各 `-mode` 无报错
 
 ---
 
-## 4. 常见坑与排查
+## 5. 常见坑与排查
 
-### 4.1 值接收者修改 struct 无效
+### 5.1 值接收者修改 struct 无效
 
 ```go
 func (p Person) SetAge(a int) { p.Age = a } // 改副本
@@ -493,7 +565,7 @@ p.SetAge(99) // p.Age 不变
 
 **修复：** 改为指针接收者 `func (p *Person) SetAge(a int)`，调用时 Go 自动取址。
 
-### 4.2 defer 在循环里注册导致资源晚释放
+### 5.2 defer 在循环里注册导致资源晚释放
 
 ```go
 for _, f := range files {
@@ -516,11 +588,11 @@ for _, f := range files {
 
 或提取为独立函数 `func process(f string) { ... defer ... }`。
 
-### 4.3 闭包捕获循环变量（Go 1.21 及以前）
+### 5.3 闭包捕获循环变量（Go 1.21 及以前）
 
 见 2.5 节。验证：打印 goroutine 中的下标，对照你的 Go 版本。
 
-### 4.4 对 struct 使用 make
+### 5.4 对 struct 使用 make
 
 ```go
 p := make(Person) // 编译错误：make 不能用于 struct
@@ -528,7 +600,7 @@ p := make(Person) // 编译错误：make 不能用于 struct
 
 **修复：** `p := Person{}` 或 `p := new(Person)` 或 `p := &Person{}`。
 
-### 4.5 shadow 导致外层变量未改
+### 5.5 shadow 导致外层变量未改
 
 ```go
 err := do()
@@ -540,7 +612,7 @@ if err != nil {
 
 若目的是更新外层 `err`，用 `=` 而非 `:=`：`err = fmt.Errorf(...)`。
 
-### 4.6 recover 写在 defer 外无效
+### 5.6 recover 写在 defer 外无效
 
 ```go
 recover() // 无效
@@ -558,7 +630,7 @@ defer func() {
 
 ---
 
-## 5. 小结与延伸阅读
+## 6. 小结与延伸阅读
 
 **要点回顾：**
 
