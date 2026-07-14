@@ -151,6 +151,144 @@ fmt.Println(e.Name, e.City) //  promoted field，可直接访问
 
 嵌入的类型字段会**提升（promote）**到外层，可直接 `e.Name`；若外层有同名字段则外层优先。
 
+##### 多个嵌入体有同名字段怎么办？
+
+当**两个及以上**匿名字段都含有同名 promoted 字段时，编译器无法判断你要访问哪一个，直接写 `e.Name` 会报错：
+
+```text
+ambiguous selector e.Name
+```
+
+下面用 `Worker` 与 `Contact` 都带 `Name` 字段的场景说明常见处理方式。
+
+**1. 用嵌入类型名作前缀（最常用）**
+
+不冲突的字段仍可 promoted 直接访问；冲突字段必须带上嵌入类型名：
+
+```go
+type Worker struct {
+    Name string
+    Role string
+}
+
+type Contact struct {
+    Name  string
+    Email string
+}
+
+type Employee struct {
+    Worker
+    Contact
+    Dept string
+}
+
+e := Employee{
+    Worker:  Worker{Name: "Dave", Role: "Engineer"},
+    Contact: Contact{Name: "Dave Zhang", Email: "d@co.com"},
+    Dept:    "Platform",
+}
+
+// fmt.Println(e.Name)       // 编译错误：ambiguous selector e.Name
+fmt.Println(e.Worker.Name)   // Dave — 工作档案里的名字
+fmt.Println(e.Contact.Name)  // Dave Zhang — 通讯录里的名字
+fmt.Println(e.Role)          // Engineer — 仅 Worker 有，可 promoted
+fmt.Println(e.Email)         // d@co.com — 仅 Contact 有，可 promoted
+fmt.Println(e.Dept)          // Platform — 外层自有字段
+```
+
+**原理：** 嵌入后外层同时拥有 `Worker` 与 `Contact` 两个**命名字段**（类型名即字段名）。`e.Worker.Name` 是明确路径；只有**唯一**能被 promote 的字段才允许省略前缀。
+
+**2. 外层自己声明同名字段（外层优先）**
+
+若业务上需要一个「默认展示名」，可在外层再声明 `Name`，它会遮蔽所有嵌入体的 `Name`：
+
+```go
+type EmployeeWithDisplayName struct {
+    Name string // 外层字段，优先级最高
+    Worker
+    Contact
+}
+
+e := EmployeeWithDisplayName{
+    Name:    "Dave (Display)",
+    Worker:  Worker{Name: "Dave"},
+    Contact: Contact{Name: "Dave Zhang"},
+}
+
+fmt.Println(e.Name)          // Dave (Display) — 外层
+fmt.Println(e.Worker.Name)   // Dave — 仍须通过前缀访问嵌入体
+fmt.Println(e.Contact.Name)  // Dave Zhang
+```
+
+此时 `e.Name` 合法，因为外层已提供唯一答案；嵌入体里的 `Name` 仍须用 `e.Worker.Name` / `e.Contact.Name` 区分。
+
+**3. 改为具名字段，放弃嵌入（彻底避免 promote 冲突）**
+
+若两个子 struct 字段高度重叠、很少需要 promoted 访问，可不用匿名字段，改用普通命名字段：
+
+```go
+type EmployeeExplicit struct {
+    W Worker
+    C Contact
+}
+
+e := EmployeeExplicit{
+    W: Worker{Name: "Dave", Role: "Engineer"},
+    C: Contact{Name: "Dave Zhang", Email: "d@co.com"},
+}
+
+fmt.Println(e.W.Name, e.C.Name) // 始终带前缀，语义最清晰
+// fmt.Println(e.Name)          // 编译错误：EmployeeExplicit 没有 Name
+```
+
+**4. 在定义阶段消除重名（治本，改源类型）**
+
+若 `Worker.Name` 与 `Contact.Name` 语义不同，可在源 struct 里用不同字段名，嵌入后自然不再冲突：
+
+```go
+type Worker struct {
+    StaffName string // 原名 Name → StaffName
+    Role      string
+}
+
+type Contact struct {
+    LegalName string // 原名 Name → LegalName
+    Email     string
+}
+
+type EmployeeRenamed struct {
+    Worker
+    Contact
+}
+
+e := EmployeeRenamed{
+    Worker:  Worker{StaffName: "Dave", Role: "Engineer"},
+    Contact: Contact{LegalName: "Dave Zhang", Email: "d@co.com"},
+}
+
+fmt.Println(e.StaffName, e.LegalName) // 均可 promoted，互不冲突
+```
+
+| 方式 | 适用场景 |
+|------|----------|
+| `e.Worker.Name` 前缀 | 保留嵌入、偶尔区分来源，**首选** |
+| 外层声明同名字段 | 需要统一的「默认字段」，其余仍用前缀 |
+| 具名字段 `W Worker` | 不想 promote，调用处始终显式 |
+| 源 struct 改字段名 | 语义本就不同，从设计上避免重名 |
+
+**小结：** promote 是语法糖，不是魔法——**唯一**时省略前缀，**歧义**时必须写清路径；方法提升（同名 method）规则与字段相同。
+
+#### 结构体扩展（模拟继承）
+
+Go 没有 `class` 与 `extends`，但可以通过**嵌入 struct** 复用基类的字段与方法，在外层**重写**同名方法，形成类似「基类 → 子类」的扩展写法。
+
+需要区分两点：
+
+- **像继承的部分：** 字段与方法 promoted、外层可定义同名方法覆盖默认行为
+- **不像继承的部分：** `Dog` 嵌入 `Animal` 后**并不是** `Animal` 的子类型，不能向上转型；运行时多态须用**接口**
+
+完整对照、多层扩展、值/指针嵌入与常见误区见专题：[Go 结构体扩展与模拟继承](go-struct-extension-and-inheritance.md)。
+
 #### 方法（Method）简述
 
 方法是带接收者（receiver）的函数：
@@ -470,6 +608,7 @@ func ReadConfig(path string) (cfg Config, err error) {
 | 领域模型（`User`、`Order`） | 把相关字段绑在一起，避免一长串散落参数 |
 | 指针接收者改字段 | 方法需要改接收者状态时（如 `SetAge`） |
 | 嵌入（Embedding） | 复用已有类型的字段/方法，少写转发样板 |
+| 模拟继承 / 扩展 | 嵌入 + 方法重写；多态用接口，见 [结构体扩展与模拟继承](go-struct-extension-and-inheritance.md) |
 
 ### 3.5 多返回值与 `(T, error)`
 
@@ -635,7 +774,7 @@ defer func() {
 **要点回顾：**
 
 1. 函数可多返回值；错误惯用法是 `(T, error)`；首字母控制包外可见性
-2. struct 组合数据；匿名字段嵌入可 promoted；改字段常用指针接收者
+2. struct 组合数据；匿名字段嵌入可 promoted；改字段常用指针接收者；扩展与「模拟继承」见 [专题文档](go-struct-extension-and-inheritance.md)
 3. 作用域由块决定；`:=` 在内层可遮蔽外层同名变量
 4. `defer` 函数返回前 LIFO 执行；**参数在 defer 注册时求值**
 5. 匿名函数引用外部变量形成闭包；Go 1.22+ 循环变量每轮独立
@@ -654,4 +793,5 @@ defer func() {
 
 - 上一篇：[Go 数组、切片与 map](go-arrays-and-slices.md)
 - 示例：[`example/functions/`](../example/functions/)
+- 专题：[Go 结构体扩展与模拟继承](go-struct-extension-and-inheritance.md)（嵌入、方法重写与接口多态）
 - 下一篇：[Go 接口与错误处理](go-interfaces-and-error-handling.md)

@@ -28,6 +28,10 @@ func main() {
 		demoBuiltin()
 	case "file":
 		readFile()
+	case "recursion1":
+		demoRecursion1()
+	case "recursion2":
+		demoRecursion2()
 	default:
 		demoFunc()
 		demoStruct()
@@ -190,4 +194,41 @@ func ParsePositive(s string) (int, error) {
 		return 0, fmt.Errorf("value is not positive: %d", i)
 	}
 	return i, nil
+}
+
+// f(5) = 5 * 4 * 3 * 2 * 1 = 5 * f(4)
+func f(n uint64) uint64 {
+	// 递归退出条件
+	if n <= 1 {
+		return 1
+	}
+
+	return n * f(n-1)
+}
+
+func demoRecursion1() {
+	fmt.Println("--- 递归 ---")
+	fmt.Println("f(5)=", f(6))
+}
+
+// 递归打印目录以及子目录的文件
+func printFiles(path string) {
+	files, err := os.ReadDir(path)
+	if err != nil {
+		fmt.Println("读取目录失败：", err)
+	}
+
+	for _, file := range files {
+		// 如果是目录 则递归打印
+		if file.IsDir() {
+			printFiles(path + "/" + file.Name())
+		} else {
+			fmt.Println(path + "/" + file.Name())
+		}
+	}
+}
+
+func demoRecursion2() {
+	fmt.Println("--- 递归 ---")
+	printFiles("/Users/wangtianfei/code/go-study/example")
 }
