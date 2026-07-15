@@ -5,7 +5,7 @@ import (
 	"os"
 )
 
-// StudentSystem 统一接口：函数版、结构体版都实现它，实现多态切换
+// StudentSystem 统一接口：函数版、结构体版、数据库版都实现它，实现多态切换
 type StudentSystem interface {
 	ShowAllStudents()
 	AddStudent()
@@ -38,6 +38,7 @@ func chooseSystem() StudentSystem {
 	fmt.Println("请选择实现方式：")
 	fmt.Println("  1. 函数版")
 	fmt.Println("  2. 结构体版")
+	fmt.Println("  3. 数据库版 (MySQL)")
 	fmt.Print("请输入：")
 
 	var mode int
@@ -47,6 +48,15 @@ func chooseSystem() StudentSystem {
 	case 1:
 		fmt.Println("已选择：函数版")
 		return NewFuncStuManager()
+	case 3:
+		fmt.Println("已选择：数据库版")
+		m, err := NewDBStuManager()
+		if err != nil {
+			fmt.Println(err)
+			fmt.Println("提示：安装并启动 MySQL 后，检查 db.go 中的账号密码；也可用环境变量 MYSQL_USER / MYSQL_PASSWORD / MYSQL_HOST / MYSQL_DB")
+			os.Exit(1)
+		}
+		return m
 	default:
 		fmt.Println("已选择：结构体版")
 		return NewStuManager()
@@ -54,6 +64,10 @@ func chooseSystem() StudentSystem {
 }
 
 func run(sys StudentSystem) {
+	if closer, ok := sys.(interface{ Close() error }); ok {
+		defer closer.Close()
+	}
+
 	var choice int
 	for {
 		ShowMenus()
@@ -73,7 +87,7 @@ func run(sys StudentSystem) {
 			fallthrough
 		default:
 			fmt.Println("正在退出...bye!")
-			os.Exit(0)
+			return
 		}
 	}
 }
